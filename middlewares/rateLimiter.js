@@ -4,7 +4,6 @@ const commonConfig = {
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   statusCode: 429,
-  // Penting: Pastikan IP diidentifikasi dengan benar lewat header Cloudflare jika perlu
   keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip, 
 };
 

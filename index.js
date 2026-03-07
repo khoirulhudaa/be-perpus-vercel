@@ -2,7 +2,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-// const sequelize = require('./config/database');
 
 // Import limiter global saja (karena yang lain sudah di routes/index.js)
 const { globalLimiter } = require('./middlewares/rateLimiter');
@@ -11,7 +10,6 @@ const { globalLimiter } = require('./middlewares/rateLimiter');
 const apiRoutes = require('./routes');  // → routes/index.js
 
 const app = express();
-const port = process.env.PORT || 5010;
 
 app.set('trust proxy', 1);
 
