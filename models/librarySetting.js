@@ -27,7 +27,10 @@ const LibrarySetting = sequelize.define('LibrarySetting', {
   
   // Kartu Anggota
   memberBadgeLogo: { type: DataTypes.STRING, field: 'member_badge_logo' },
-  cardThemeColor: { type: DataTypes.STRING(7), defaultValue: '#3b82f6', field: 'card_theme_color' }
+  cardThemeColor: { type: DataTypes.STRING(7), defaultValue: '#3b82f6', field: 'card_theme_color' },
+  urlYoutube1: { type: DataTypes.STRING, field: 'url_youtube_1' },
+  urlYoutube2: { type: DataTypes.STRING, field: 'url_youtube_2' },
+  urlYoutube3: { type: DataTypes.STRING, field: 'url_youtube_3' },
 }, {
   tableName: 'library_settings',
   timestamps: true,
