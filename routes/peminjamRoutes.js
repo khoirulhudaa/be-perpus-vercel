@@ -14,6 +14,6 @@ router.get('/recent-kehadiran', pinjamCtrl.getRecentKehadiranPerpus);
 router.post("/pinjam", pinjamCtrl.scanPinjamKiosk);
 router.post("/kembali", pinjamCtrl.scanKembaliKiosk);
 router.put('/perpanjang/:id', pinjamCtrl.extendLoan);
-
+router.get('/sse-recent-kehadiran', pinjamCtrl.sseRecentKehadiran);
 
 module.exports = router;
