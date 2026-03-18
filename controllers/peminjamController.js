@@ -431,6 +431,59 @@ exports.extendLoan = async (req, res) => {
   }
 };
 
+// Fungsi ini dipanggil setiap ada kehadiran baru (dari scanKehadiranPerpus)
+exports.notifyNewVisitor = (visitorData) => {
+  visitorEmitter.emit('new-visitor', visitorData);
+};
+
+// SSE endpoint
+exports.sseRecentKehadiran = (req, res) => {
+  const { schoolId } = req.query;
+
+  if (!schoolId) {
+    return res.status(400).json({ success: false, message: 'schoolId required' });
+  }
+
+  // Header penting untuk SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders(); // Penting untuk flush header awal
+
+  // Kirim comment setiap 15 detik agar koneksi tetap hidup
+  const keepAlive = setInterval(() => {
+    res.write(': keep-alive\n\n');
+  }, 15000);
+
+  // Listener khusus schoolId ini
+  const sendVisitor = (visitor) => {
+    // Optional: filter hanya visitor dari schoolId yang sama
+    if (visitor.schoolId !== Number(schoolId)) return;
+
+    const data = {
+      name: visitor.userName || 'Pengunjung',
+      role: visitor.userRole,
+      identifier: visitor.userRole === 'student' ? visitor.nis : visitor.nip,
+      kelas: visitor.studentId ? 'Kelas ?' : null,
+      photoUrl: null, // ← isi kalau ada
+      mode: visitor.waktuPulang ? 'pulang' : 'masuk',
+      time: moment(visitor.waktuMasuk).format('HH:mm'),
+      schoolId: visitor.schoolId,
+    };
+
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  visitorEmitter.on('new-visitor', sendVisitor);
+
+  // Cleanup saat client disconnect
+  req.on('close', () => {
+    visitorEmitter.off('new-visitor', sendVisitor);
+    clearInterval(keepAlive);
+    res.end();
+  });
+};
+
 /**
  * POST /peminjam/kehadiran
  * Scan masuk atau pulang perpustakaan
@@ -626,57 +679,4 @@ exports.getRecentKehadiranPerpus = async (req, res) => {
       message: 'Gagal mengambil data pengunjung terbaru',
     });
   }
-};
-
-// Fungsi ini dipanggil setiap ada kehadiran baru (dari scanKehadiranPerpus)
-exports.notifyNewVisitor = (visitorData) => {
-  visitorEmitter.emit('new-visitor', visitorData);
-};
-
-// SSE endpoint
-exports.sseRecentKehadiran = (req, res) => {
-  const { schoolId } = req.query;
-
-  if (!schoolId) {
-    return res.status(400).json({ success: false, message: 'schoolId required' });
-  }
-
-  // Header penting untuk SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders(); // Penting untuk flush header awal
-
-  // Kirim comment setiap 15 detik agar koneksi tetap hidup
-  const keepAlive = setInterval(() => {
-    res.write(': keep-alive\n\n');
-  }, 15000);
-
-  // Listener khusus schoolId ini
-  const sendVisitor = (visitor) => {
-    // Optional: filter hanya visitor dari schoolId yang sama
-    if (visitor.schoolId !== Number(schoolId)) return;
-
-    const data = {
-      name: visitor.userName || 'Pengunjung',
-      role: visitor.userRole,
-      identifier: visitor.userRole === 'student' ? visitor.nis : visitor.nip,
-      kelas: visitor.studentId ? 'Kelas ?' : null,
-      photoUrl: null, // ← isi kalau ada
-      mode: visitor.waktuPulang ? 'pulang' : 'masuk',
-      time: moment(visitor.waktuMasuk).format('HH:mm'),
-      schoolId: visitor.schoolId,
-    };
-
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  visitorEmitter.on('new-visitor', sendVisitor);
-
-  // Cleanup saat client disconnect
-  req.on('close', () => {
-    visitorEmitter.off('new-visitor', sendVisitor);
-    clearInterval(keepAlive);
-    res.end();
-  });
 };
