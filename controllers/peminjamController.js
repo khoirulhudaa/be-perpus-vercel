@@ -591,7 +591,7 @@ exports.scanKehadiranPerpus = async (req, res) => {
       'https://be-school.kiraproject.id/siswa/validate-qr',
       {
         params: { qrCodeData, schoolId: schoolIdNum },
-        timeout: 8000, // hindari hang terlalu lama
+        timeout: 12000, // hindari hang terlalu lama
       }
     );
 
