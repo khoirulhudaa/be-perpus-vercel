@@ -15,5 +15,4 @@ router.post("/pinjam", pinjamCtrl.scanPinjamKiosk);
 router.post("/kembali", pinjamCtrl.scanKembaliKiosk);
 router.put('/perpanjang/:id', pinjamCtrl.extendLoan);
 
-
 module.exports = router;

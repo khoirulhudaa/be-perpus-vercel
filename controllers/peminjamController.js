@@ -432,10 +432,133 @@ exports.extendLoan = async (req, res) => {
  * POST /peminjam/kehadiran
  * Scan masuk atau pulang perpustakaan
  */
+// exports.scanKehadiranPerpus = async (req, res) => {
+//   const { qrCodeData, mode, schoolId } = req.body;
+
+//   // Validasi input
+//   if (!qrCodeData || !mode || !schoolId) {
+//     return res.status(400).json({
+//       success: false,
+//       message: 'qrCodeData, mode, dan schoolId wajib diisi',
+//     });
+//   }
+
+//   const normalizedMode = (mode || '').toUpperCase();
+//   if (!['MASUK', 'PULANG'].includes(normalizedMode)) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Mode harus 'MASUK' atau 'PULANG'",
+//     });
+//   }
+
+//   const todayStart = moment().startOf('day').toDate();
+
+//   try {
+//     // 1. Validasi QR ke server pusat (be-school)
+//     const userResponse = await axios.get(`https://be-school.kiraproject.id/siswa/validate-qr`, {
+//       params: { qrCodeData, schoolId },
+//     });
+
+//     const userData = userResponse.data;
+//     if (!userData.success || !userData.user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Kartu tidak terdaftar di sistem pusat',
+//       });
+//     }
+
+//     const { user, role } = userData;
+//     const idKey = role === 'student' ? 'studentId' : 'guruId';
+
+//     if (normalizedMode === 'MASUK') {
+//       // Cek apakah sudah ada sesi aktif (belum pulang)
+//       const activeSession = await KehadiranPerpus.findOne({
+//         where: {
+//           [idKey]: user.id,
+//           waktuPulang: null,
+//           waktuMasuk: { [Op.gte]: todayStart },
+//           schoolId: Number(schoolId),
+//         },
+//       });
+
+//       if (activeSession) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Anda masih berada di perpustakaan. Scan PULANG terlebih dahulu!',
+//         });
+//       }
+
+//       // Buat record masuk
+//       const newRecord = await KehadiranPerpus.create({
+//         [idKey]: user.id,
+//         userRole: role,
+//         schoolId: Number(schoolId),
+//         userName: user.name || user.nama || 'Pengguna',
+//         waktuMasuk: new Date(),
+//         nis: role === 'student' ? user.nis : null,
+//         nip: role !== 'student' ? user.nip : null,
+//         email: role !== 'student' ? user.email : null,
+//       });
+
+//       return res.json({
+//         success: true,
+//         message: `Selamat Datang, ${user.name || user.nama || 'Pengguna'}`,
+//         visitor: {
+//           name: user.name || user.nama || 'Pengguna',
+//           role,
+//           identifier: role === 'student' ? user.nis : user.nip,
+//           kelas: role === 'student' ? user.class || user.kelas : null,
+//           photoUrl: user.photoUrl || null,
+//           mode: 'masuk',
+//           time: moment().format('HH:mm'),
+//         },
+//       });
+//     }
+
+//     // Mode PULANG
+//     const lastEntry = await KehadiranPerpus.findOne({
+//       where: {
+//         [idKey]: user.id,
+//         waktuPulang: null,
+//         waktuMasuk: { [Op.gte]: todayStart },
+//         schoolId: Number(schoolId),
+//       },
+//       order: [['waktuMasuk', 'DESC']],
+//     });
+
+//     if (!lastEntry) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Tidak ditemukan data masuk hari ini atau sudah tercatat pulang',
+//       });
+//     }
+
+//     await lastEntry.update({ waktuPulang: new Date() });
+
+//     return res.json({
+//       success: true,
+//       message: `Sampai Jumpa, ${user.name || user.nama || 'Pengguna'}`,
+//       visitor: {
+//         name: user.name || user.nama || 'Pengguna',
+//         role,
+//         identifier: role === 'student' ? user.nis : user.nip,
+//         kelas: role === 'student' ? user.class || user.kelas : null,
+//         photoUrl: user.photoUrl || null,
+//         mode: 'pulang',
+//         time: moment().format('HH:mm'),
+//       },
+//     });
+//   } catch (err) {
+//     console.error('SCAN_KEHADIRAN_ERROR:', err);
+//     const errorMsg = err.response?.data?.message || err.message || 'Gagal memproses kehadiran';
+//     return res.status(500).json({ success: false, message: errorMsg });
+//   }
+// };
+
 exports.scanKehadiranPerpus = async (req, res) => {
   const { qrCodeData, mode, schoolId } = req.body;
 
-  // Validasi input
+  // ─── VALIDASI INPUT ────────────────────────────────────────
   if (!qrCodeData || !mode || !schoolId) {
     return res.status(400).json({
       success: false,
@@ -443,7 +566,7 @@ exports.scanKehadiranPerpus = async (req, res) => {
     });
   }
 
-  const normalizedMode = (mode || '').toUpperCase();
+  const normalizedMode = (mode || '').toUpperCase().trim();
   if (!['MASUK', 'PULANG'].includes(normalizedMode)) {
     return res.status(400).json({
       success: false,
@@ -452,106 +575,146 @@ exports.scanKehadiranPerpus = async (req, res) => {
   }
 
   const todayStart = moment().startOf('day').toDate();
+  const schoolIdNum = Number(schoolId);
 
   try {
-    // 1. Validasi QR ke server pusat (be-school)
-    const userResponse = await axios.get(`https://be-school.kiraproject.id/siswa/validate-qr`, {
-      params: { qrCodeData, schoolId },
-    });
+    // ─── 1. Validasi QR ke sistem pusat (be-school) ─────────────
+    const userResponse = await axios.get(
+      'https://be-school.kiraproject.id/siswa/validate-qr',
+      {
+        params: { qrCodeData, schoolId: schoolIdNum },
+        timeout: 8000, // hindari hang terlalu lama
+      }
+    );
 
     const userData = userResponse.data;
     if (!userData.success || !userData.user) {
       return res.status(404).json({
         success: false,
-        message: 'Kartu tidak terdaftar di sistem pusat',
+        message: 'Kartu tidak terdaftar atau tidak valid di sistem pusat',
       });
     }
 
     const { user, role } = userData;
     const idKey = role === 'student' ? 'studentId' : 'guruId';
 
+    // Data visitor yang akan dikirim ke TV
+    const visitorPayload = {
+      id: null, // akan diisi nanti
+      name: user.name || user.nama || 'Pengunjung',
+      role,
+      identifier: role === 'student' ? user.nis : user.nip,
+      kelas: role === 'student' ? (user.kelas || user.class || '-') : null,
+      photoUrl: user.photoUrl || null,
+      mode: normalizedMode.toLowerCase(),
+      time: moment().format('HH:mm'),
+      timestamp: new Date().toISOString(),
+    };
+
+    // ─── 2. Proses MASUK ───────────────────────────────────────
     if (normalizedMode === 'MASUK') {
-      // Cek apakah sudah ada sesi aktif (belum pulang)
+      // Cek apakah sudah ada sesi aktif (belum pulang hari ini)
       const activeSession = await KehadiranPerpus.findOne({
         where: {
           [idKey]: user.id,
           waktuPulang: null,
           waktuMasuk: { [Op.gte]: todayStart },
-          schoolId: Number(schoolId),
+          schoolId: schoolIdNum,
         },
       });
 
       if (activeSession) {
         return res.status(400).json({
           success: false,
-          message: 'Anda masih berada di perpustakaan. Scan PULANG terlebih dahulu!',
+          message: 'Anda masih berada di dalam perpustakaan. Silakan scan PULANG terlebih dahulu.',
         });
       }
 
-      // Buat record masuk
+      // Buat record baru
       const newRecord = await KehadiranPerpus.create({
         [idKey]: user.id,
         userRole: role,
-        schoolId: Number(schoolId),
-        userName: user.name || user.nama || 'Pengguna',
-        waktuMasuk: new Date(),
+        schoolId: schoolIdNum,
+        userName: visitorPayload.name,
         nis: role === 'student' ? user.nis : null,
         nip: role !== 'student' ? user.nip : null,
-        email: role !== 'student' ? user.email : null,
+        email: user.email || null,
+        waktuMasuk: new Date(),
+        // tambahkan field lain jika ada (misal: deviceInfo, ip, dll)
       });
+
+      visitorPayload.id = newRecord.id;
+
+      // Broadcast ke semua TV di sekolah yang sama
+      io.to(`school:${schoolIdNum}`).emit('new-visitor', visitorPayload);
 
       return res.json({
         success: true,
-        message: `Selamat Datang, ${user.name || user.nama || 'Pengguna'}`,
-        visitor: {
-          name: user.name || user.nama || 'Pengguna',
-          role,
-          identifier: role === 'student' ? user.nis : user.nip,
-          kelas: role === 'student' ? user.class || user.kelas : null,
-          photoUrl: user.photoUrl || null,
-          mode: 'masuk',
-          time: moment().format('HH:mm'),
+        message: `Selamat Datang, ${visitorPayload.name}!`,
+        visitor: visitorPayload,
+      });
+    }
+
+    // ─── 3. Proses PULANG ──────────────────────────────────────
+    if (normalizedMode === 'PULANG') {
+      // Cari record masuk terakhir yang belum pulang
+      const lastEntry = await KehadiranPerpus.findOne({
+        where: {
+          [idKey]: user.id,
+          waktuPulang: null,
+          waktuMasuk: { [Op.gte]: todayStart },
+          schoolId: schoolIdNum,
         },
+        order: [['waktuMasuk', 'DESC']],
+      });
+
+      if (!lastEntry) {
+        return res.status(400).json({
+          success: false,
+          message: 'Tidak ditemukan data masuk hari ini atau Anda sudah tercatat pulang.',
+        });
+      }
+
+      // Update waktu pulang
+      await lastEntry.update({
+        waktuPulang: new Date(),
+      });
+
+      visitorPayload.id = lastEntry.id;
+
+      // Broadcast ke TV
+      io.to(`school:${schoolIdNum}`).emit('new-visitor', visitorPayload);
+
+      return res.json({
+        success: true,
+        message: `Sampai Jumpa, ${visitorPayload.name}! Terima kasih atas kunjungannya.`,
+        visitor: visitorPayload,
       });
     }
 
-    // Mode PULANG
-    const lastEntry = await KehadiranPerpus.findOne({
-      where: {
-        [idKey]: user.id,
-        waktuPulang: null,
-        waktuMasuk: { [Op.gte]: todayStart },
-        schoolId: Number(schoolId),
-      },
-      order: [['waktuMasuk', 'DESC']],
-    });
-
-    if (!lastEntry) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tidak ditemukan data masuk hari ini atau sudah tercatat pulang',
-      });
-    }
-
-    await lastEntry.update({ waktuPulang: new Date() });
-
-    return res.json({
-      success: true,
-      message: `Sampai Jumpa, ${user.name || user.nama || 'Pengguna'}`,
-      visitor: {
-        name: user.name || user.nama || 'Pengguna',
-        role,
-        identifier: role === 'student' ? user.nis : user.nip,
-        kelas: role === 'student' ? user.class || user.kelas : null,
-        photoUrl: user.photoUrl || null,
-        mode: 'pulang',
-        time: moment().format('HH:mm'),
-      },
-    });
   } catch (err) {
-    console.error('SCAN_KEHADIRAN_ERROR:', err);
-    const errorMsg = err.response?.data?.message || err.message || 'Gagal memproses kehadiran';
-    return res.status(500).json({ success: false, message: errorMsg });
+    console.error('[SCAN_KEHADIRAN_PERPUS_ERROR]', {
+      error: err.message,
+      stack: err.stack,
+      body: req.body,
+    });
+
+    let message = 'Gagal memproses kehadiran perpustakaan';
+    let statusCode = 500;
+
+    if (err.response) {
+      // Error dari axios ke be-school
+      message = err.response.data?.message || 'Gagal validasi kartu di sistem pusat';
+      statusCode = err.response.status || 502;
+    } else if (err.code === 'ECONNABORTED') {
+      message = 'Timeout koneksi ke sistem pusat';
+      statusCode = 504;
+    }
+
+    return res.status(statusCode).json({
+      success: false,
+      message,
+    });
   }
 };
 

@@ -4,18 +4,66 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const sequelize = require('./config/database');
+const http = require('http');               // ← tambahkan ini
+const { Server } = require('socket.io');
 
-// Import limiter global saja (karena yang lain sudah di routes/index.js)
 const { globalLimiter } = require('./middlewares/rateLimiter');
 
-// Import semua routes dari satu file
-const apiRoutes = require('./routes');  // → routes/index.js
+const apiRoutes = require('./routes'); 
 
 const app = express();
 const port = process.env.PORT || 5010;
 
-app.set('trust proxy', 1);
+// Buat HTTP server secara eksplisit supaya bisa dipasang socket.io
+const server = http.createServer(app);
 
+// Inisialisasi Socket.IO
+const io = new Server(server, {
+  cors: {
+    // sesuaikan di production nanti (misal: ['https://go.kiraproject.id'])
+    origin: '*',                        
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
+  // biar koneksi stabil di jaringan sekolah yang kadang lelet
+  pingTimeout: 60000,                   
+  pingInterval: 25000,
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 3000
+});
+
+// Attach io ke app supaya bisa diakses di controller/middleware
+app.set('io', io);    
+// ────────────────────────────────────────────────
+// Socket.IO Event Handlers (global)
+// ────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  console.log(`[SOCKET] Client connected: ${socket.id}`);
+
+  // Client (TV) mengirim event 'join' dengan schoolId
+  socket.on('join', (schoolId) => {
+    if (!schoolId) return;
+
+    const room = `school:${schoolId}`;
+    socket.join(room);
+    console.log(`[SOCKET] Client ${socket.id} joined room: ${room}`);
+    
+    // Optional: kirim konfirmasi ke client
+    socket.emit('joined', { room, message: `Joined room ${room}` });
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`[SOCKET] Client ${socket.id} disconnected: ${reason}`);
+  });
+
+  // Optional: handle error
+  socket.on('error', (err) => {
+    console.error('[SOCKET ERROR]', err);
+  });
+});                 
+
+app.set('trust proxy', 1);
 if (process.env.NODE_ENV !== 'production') {
   app.set('json spaces', 2);
 }
@@ -64,10 +112,6 @@ app.use((err, req, res, next) => {
 sequelize.authenticate()
   .then(() => {
     console.log('MySQL connected!');
-    
-    // JIKA ADA PERUBAH MODELS SAJA (LOCAL SAJA)
-    // return sequelize.sync({ alter: true, force: false });
-
     return sequelize.sync({ alter: false, force: false });
   })
   .then(() => {
@@ -80,3 +124,5 @@ sequelize.authenticate()
     console.error('DB connection failed:', err);
     process.exit(1);
 });
+
+module.exports = { app, io, server };
