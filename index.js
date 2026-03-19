@@ -4,8 +4,8 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const sequelize = require('./config/database');
-const http = require('http');               // ← tambahkan ini
-const { Server } = require('socket.io');
+const socket = require('./socket'); // file baru tadi
+const http = require('http');
 
 const { globalLimiter } = require('./middlewares/rateLimiter');
 
@@ -13,57 +13,11 @@ const apiRoutes = require('./routes');
 
 const app = express();
 const port = process.env.PORT || 5010;
-
-// Buat HTTP server secara eksplisit supaya bisa dipasang socket.io
 const server = http.createServer(app);
-
-// Inisialisasi Socket.IO
-const io = new Server(server, {
-  cors: {
-    // sesuaikan di production nanti (misal: ['https://go.kiraproject.id'])
-    origin: '*',                        
-    methods: ['GET', 'POST'],
-    credentials: true
-  },
-  // biar koneksi stabil di jaringan sekolah yang kadang lelet
-  pingTimeout: 60000,                   
-  pingInterval: 25000,
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 3000
-});
-
-// Attach io ke app supaya bisa diakses di controller/middleware
-app.set('io', io);    
-// ────────────────────────────────────────────────
-// Socket.IO Event Handlers (global)
-// ────────────────────────────────────────────────
-io.on('connection', (socket) => {
-  console.log(`[SOCKET] Client connected: ${socket.id}`);
-
-  // Client (TV) mengirim event 'join' dengan schoolId
-  socket.on('join', (schoolId) => {
-    if (!schoolId) return;
-
-    const room = `school:${schoolId}`;
-    socket.join(room);
-    console.log(`[SOCKET] Client ${socket.id} joined room: ${room}`);
-    
-    // Optional: kirim konfirmasi ke client
-    socket.emit('joined', { room, message: `Joined room ${room}` });
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log(`[SOCKET] Client ${socket.id} disconnected: ${reason}`);
-  });
-
-  // Optional: handle error
-  socket.on('error', (err) => {
-    console.error('[SOCKET ERROR]', err);
-  });
-});                 
+socket.init(server); // inisialisasi di sini
 
 app.set('trust proxy', 1);
+
 if (process.env.NODE_ENV !== 'production') {
   app.set('json spaces', 2);
 }
@@ -116,13 +70,11 @@ sequelize.authenticate()
   })
   .then(() => {
     console.log('Tables synced');
-    app.listen(port, '0.0.0.0', () => {
+    server.listen(port, '0.0.0.0', () => {  // ← penting: server.listen, bukan app.listen
       console.log(`Server running on port ${port}`);
     });
   })
   .catch(err => {
     console.error('DB connection failed:', err);
     process.exit(1);
-});
-
-module.exports = { app, io, server };
+  });

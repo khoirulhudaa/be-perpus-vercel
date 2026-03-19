@@ -5,7 +5,8 @@ const { Op, fn, col, literal } = require('sequelize');
 const moment = require('moment'); 
 const axios = require('axios');
 const KehadiranPerpus = require('../models/kehadiran');
-const { io } = require('../index'); 
+const path = require('path');
+const socket = require(path.resolve(__dirname, '../socket')); // naik ke root
 
 exports.getKunjunganReport = async (req, res) => {
   try {
@@ -558,6 +559,7 @@ exports.extendLoan = async (req, res) => {
 
 exports.scanKehadiranPerpus = async (req, res) => {
   const { qrCodeData, mode, schoolId } = req.body;
+  const io = socket.getIO();
 
   // ─── VALIDASI INPUT ────────────────────────────────────────
   if (!qrCodeData || !mode || !schoolId) {
@@ -568,7 +570,7 @@ exports.scanKehadiranPerpus = async (req, res) => {
   }
 
   if (!io) {
-    console.error('[CRITICAL] io tidak berhasil di-import di peminjamController!');
+    console.error('[CRITICAL TEST] io tidak berhasil di-import di peminjamController!');
     // kamu bisa throw error atau log ke file kalau mau
   }
 
