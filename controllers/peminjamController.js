@@ -5,6 +5,7 @@ const { Op, fn, col, literal } = require('sequelize');
 const moment = require('moment'); 
 const axios = require('axios');
 const KehadiranPerpus = require('../models/kehadiran');
+const { io } = require('../index'); 
 
 exports.getKunjunganReport = async (req, res) => {
   try {
@@ -564,6 +565,11 @@ exports.scanKehadiranPerpus = async (req, res) => {
       success: false,
       message: 'qrCodeData, mode, dan schoolId wajib diisi',
     });
+  }
+
+  if (!io) {
+    console.error('[CRITICAL] io tidak berhasil di-import di peminjamController!');
+    // kamu bisa throw error atau log ke file kalau mau
   }
 
   const normalizedMode = (mode || '').toUpperCase().trim();
