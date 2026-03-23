@@ -65,27 +65,73 @@ exports.getBiblioSelection = async (req, res) => {
   }
 };
 
+// exports.createBiblio = async (req, res) => {
+//   try {
+//     let imageUrl = null;
+//     let fileUrl = null;
+
+//     // 1. Validasi Sisi Server
+//     if (req.files) {
+//       if (req.files.image && req.files.image[0].size > 2 * 1024 * 1024) {
+//         return res.status(400).json({ success: false, message: "Ukuran gambar maksimal 2MB" });
+//       }
+//       if (req.files.fileAtt && req.files.fileAtt[0].size > 5 * 1024 * 1024) {
+//         return res.status(400).json({ success: false, message: "Ukuran PDF maksimal 5MB" });
+//       }
+//     }
+
+//     const uploadToCloudinary = (buffer, resourceType = 'auto') => {
+//       return new Promise((resolve, reject) => {
+//         const stream = cloudinary.uploader.upload_stream(
+//           { 
+//             resource_type: resourceType,
+//             folder: 'library_assets' // Opsional: kelompokkan dalam folder
+//           }, 
+//           (error, result) => {
+//             if (error) reject(error);
+//             else resolve(result.secure_url);
+//           }
+//         );
+//         streamifier.createReadStream(buffer).pipe(stream);
+//       });
+//     };
+
+//     // 2. Proses Upload
+//     if (req.files && req.files.image) {
+//       imageUrl = await uploadToCloudinary(req.files.image[0].buffer, 'image');
+//     }
+//     if (req.files && req.files.fileAtt) {
+//       fileUrl = await uploadToCloudinary(req.files.fileAtt[0].buffer, 'raw');
+//     }
+
+//     const biblioData = { ...req.body, image: imageUrl, fileAtt: fileUrl };
+//     const newBiblio = await Biblio.create(biblioData);
+
+//     res.status(201).json({ success: true, data: newBiblio });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+
 exports.createBiblio = async (req, res) => {
   try {
-    let imageUrl = null;
-    let fileUrl = null;
+    const { schoolId, title } = req.body;
 
-    // 1. Validasi Sisi Server
-    if (req.files) {
-      if (req.files.image && req.files.image[0].size > 2 * 1024 * 1024) {
-        return res.status(400).json({ success: false, message: "Ukuran gambar maksimal 2MB" });
-      }
-      if (req.files.fileAtt && req.files.fileAtt[0].size > 5 * 1024 * 1024) {
-        return res.status(400).json({ success: false, message: "Ukuran PDF maksimal 5MB" });
-      }
+    // 1. Validasi Dasar
+    if (!schoolId || !title) {
+      return res.status(400).json({ success: false, message: "School ID dan Judul wajib diisi" });
     }
 
+    // Fungsi Helper Upload Cloudinary
     const uploadToCloudinary = (buffer, resourceType = 'auto') => {
       return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           { 
             resource_type: resourceType,
-            folder: 'library_assets' // Opsional: kelompokkan dalam folder
+            folder: `school_${schoolId}/library`,
+            // Optimasi gambar otomatis oleh Cloudinary
+            transformation: resourceType === 'image' ? [{ width: 800, crop: "limit", quality: "auto" }] : []
           }, 
           (error, result) => {
             if (error) reject(error);
@@ -96,19 +142,52 @@ exports.createBiblio = async (req, res) => {
       });
     };
 
-    // 2. Proses Upload
+    // 2. Persiapan Parallel Upload
+    const uploadPromises = [];
+    const fileKeys = []; // Untuk melacak hasil promise
+
     if (req.files && req.files.image) {
-      imageUrl = await uploadToCloudinary(req.files.image[0].buffer, 'image');
-    }
-    if (req.files && req.files.fileAtt) {
-      fileUrl = await uploadToCloudinary(req.files.fileAtt[0].buffer, 'raw');
+      uploadPromises.push(uploadToCloudinary(req.files.image[0].buffer, 'image'));
+      fileKeys.push('image');
     }
 
-    const biblioData = { ...req.body, image: imageUrl, fileAtt: fileUrl };
+    if (req.files && req.files.fileAtt) {
+      uploadPromises.push(uploadToCloudinary(req.files.fileAtt[0].buffer, 'auto')); // 'auto' lebih baik untuk PDF
+      fileKeys.push('fileAtt');
+    }
+
+    // 3. Eksekusi Parallel (Ini yang bikin CEPAT)
+    const uploadedUrls = await Promise.all(uploadPromises);
+    
+    // Mapping hasil upload kembali ke variabel
+    let imageUrl = null;
+    let fileUrl = null;
+
+    uploadedUrls.forEach((url, index) => {
+      if (fileKeys[index] === 'image') imageUrl = url;
+      if (fileKeys[index] === 'fileAtt') fileUrl = url;
+    });
+
+    // 4. Simpan ke Database
+    const biblioData = { 
+      ...req.body, 
+      image: imageUrl, 
+      fileAtt: fileUrl,
+      // Pastikan field numerik terkonversi jika dikirim via FormData (string)
+      schoolId: parseInt(schoolId),
+      publishYear: req.body.publishYear || null
+    };
+
     const newBiblio = await Biblio.create(biblioData);
 
-    res.status(201).json({ success: true, data: newBiblio });
+    res.status(201).json({ 
+      success: true, 
+      message: "Katalog berhasil dibuat", 
+      data: newBiblio 
+    });
+
   } catch (err) {
+    console.error("[CREATE BIBLIO ERROR]:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
