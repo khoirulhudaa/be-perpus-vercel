@@ -5,6 +5,7 @@ const Biblio = sequelize.define('Biblio', {
   biblioId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, field: 'biblio_id' },
   gmdId: { type: DataTypes.INTEGER, field: 'gmd_id' },
   title: { type: DataTypes.STRING, allowNull: false },
+  genreId: { type: DataTypes.INTEGER, field: 'genre_id' }, // Tambahkan ini
   sor: { type: DataTypes.STRING }, // Statement of Responsibility
   edition: { type: DataTypes.STRING },
   isbnIssn: { type: DataTypes.STRING(50), field: 'isbn_issn' },

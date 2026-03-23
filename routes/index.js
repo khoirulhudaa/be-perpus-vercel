@@ -12,6 +12,7 @@
   const inventoryRoutes = require('./inventoryRoutes');
   const serialRoutes = require('./serialRoutes');
   const settingRoutes = require('./settingRoutes');
+  const genreRoutes = require('./genreRoutes');
 
   router.use('/inventory', inventoryRoutes);
   router.use('/serial', serialRoutes);
@@ -23,6 +24,7 @@
   router.use('/member', memberRoutes);     
   router.use('/setting', settingRoutes);     
   router.use('/eksemplar', eksemplarRoutes); 
+  router.use('/genre', genreRoutes); 
 
   // Route testing (hanya ikut global limiter dari app.js)
   router.get('/testing', (req, res) => {
