@@ -11,11 +11,17 @@ const compression = require('compression');
 const { globalLimiter } = require('./middlewares/rateLimiter');
 
 const apiRoutes = require('./routes'); 
+const Biblio = require('./models/biblio');
+const Genre = require('./models/genre');
 
 const app = express();
 const port = process.env.PORT || 5010;
 const server = http.createServer(app);
 socket.init(server); // inisialisasi di sini
+
+// Relasi Biblio - Genre
+Biblio.belongsTo(Genre, { foreignKey: 'genreId', as: 'genre' });
+Genre.hasMany(Biblio, { foreignKey: 'genreId', as: 'biblios' });
 
 app.set('trust proxy', 1);
 
