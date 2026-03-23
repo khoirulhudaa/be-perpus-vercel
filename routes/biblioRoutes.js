@@ -17,5 +17,6 @@ router.get('/', cache(120), biblioController.getAllBiblio);
 router.get('/all', biblioController.getBiblioSelection);
 router.post('/', cpUpload, biblioController.createBiblio);
 router.delete('/:id', biblioController.deleteBiblio);
+router.put('/:id', cpUpload, biblioController.updateBiblio);
 
 module.exports = router;
