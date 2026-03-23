@@ -6,20 +6,20 @@
   const authRoutes = require('./authRoutes');
   const loanRoutes = require('./loanRoutes');
   const infoRoutes = require('./infoRoutes');
-  const peminjamRoutes = require('./peminjamRoutes');
   const eksemplarRoutes = require('./eksemplarRoutes');
   const memberRoutes = require('./memberRoutes');
   const inventoryRoutes = require('./inventoryRoutes');
   const serialRoutes = require('./serialRoutes');
   const settingRoutes = require('./settingRoutes');
   const genreRoutes = require('./genreRoutes');
+  const peminjamRoutes = require('./peminjamRoutes');
 
+  router.use('/peminjam', peminjamRoutes);     
   router.use('/inventory', inventoryRoutes);
   router.use('/serial', serialRoutes);
   router.use('/biblio', biblioRoutes);
   router.use('/auth', authRoutes);
   router.use('/loan', loanRoutes);     
-  router.use('/peminjam', peminjamRoutes);     
   router.use('/info', infoRoutes);     
   router.use('/member', memberRoutes);     
   router.use('/setting', settingRoutes);     

@@ -9,6 +9,26 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// === REDIS + INVALIDATE CACHE ===
+const redisClient = require('../config/redis');
+
+const invalidateBiblioCache = async (schoolId) => {
+  if (!schoolId) return;
+  try {
+    // Kita gunakan wildcard * agar semua page, search, dan limit untuk schoolId ini terhapus
+    // Contoh: cache:/api/biblio*schoolId=1*
+    const pattern = `cache:*biblio*schoolId=${schoolId}*`; 
+    const keys = await redisClient.keys(pattern);
+    
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+      console.log(`🗑️ Redis Cleaned: ${keys.length} biblio keys for school ${schoolId}`);
+    }
+  } catch (err) {
+    console.error('❌ Redis Del Error:', err.message);
+  }
+};
+
 exports.getAllBiblio = async (req, res) => {
   try {
     const { schoolId, q, year, page = 1, limit = 10 } = req.query;
@@ -130,7 +150,7 @@ exports.createBiblio = async (req, res) => {
     };
 
     const newBiblio = await Biblio.create(biblioData);
-
+    await invalidateBiblioCache(schoolId);
     res.status(201).json({ 
       success: true, 
       message: "Katalog berhasil dibuat", 
@@ -148,8 +168,10 @@ exports.deleteBiblio = async (req, res) => {
     const biblio = await Biblio.findByPk(req.params.id);
     if (!biblio) return res.status(404).json({ success: false, message: 'Data tidak ditemukan' });
     
+    const sId = biblio.schoolId; 
     biblio.isActive = false; 
-    await biblio.save();
+    await biblio.save();  
+    await invalidateBiblioCache(sId);
     res.json({ success: true, message: 'Berhasil dihapus' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

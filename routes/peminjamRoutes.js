@@ -4,7 +4,7 @@ const pinjamCtrl = require("../controllers/peminjamController");
 const cache = require("../middlewares/cache");
 
 router.get("/", cache(120), pinjamCtrl.getAllPeminjaman);
-router.get("/report", pinjamCtrl.getKunjunganReport);
+router.get("/report", cache(300), pinjamCtrl.getKunjunganReport);
 router.get("/:id", pinjamCtrl.getPinjamById);
 router.post("/", pinjamCtrl.createPinjam);
 router.put("/kembali/:id", pinjamCtrl.pengembalianBuku); 

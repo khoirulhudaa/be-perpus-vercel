@@ -8,6 +8,28 @@ const KehadiranPerpus = require('../models/kehadiran');
 const path = require('path');
 const socket = require(path.resolve(__dirname, '../socket')); // naik ke root
 
+const redisClient = require('../config/redis');
+
+// Helper untuk hapus cache peminjaman & laporan
+const invalidatePeminjamCache = async (schoolId) => {
+  if (!schoolId) return;
+  try {
+    // Menghapus cache list peminjaman dan report kunjungan
+    const patterns = [
+      `cache:*peminjam*schoolId=${schoolId}*`,
+      `cache:*report*schoolId=${schoolId}*`
+    ];
+
+    for (const pattern of patterns) {
+      const keys = await redisClient.keys(pattern);
+      if (keys.length > 0) await redisClient.del(keys);
+    }
+    console.log(`🗑️ Peminjam & Report Cache Cleared for school ${schoolId}`);
+  } catch (err) {
+    console.error('❌ Redis Invalidation Error:', err.message);
+  }
+};
+
 exports.getKunjunganReport = async (req, res) => {
   try {
     const { schoolId, year, month, date, page = 1, limit = 10 } = req.query;
@@ -195,8 +217,8 @@ exports.createPinjam = async (req, res) => {
 
     // 3. Update status eksemplar jadi 'Dipinjam'
     await Eksemplar.update({ status: 'Dipinjam' }, { where: { id: eksemplarId } });
-
-    res.json({ success: true, data: pinjam });
+    await invalidatePeminjamCache(schoolId);
+    res.json({ success: true, data: pinjam }); 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -223,93 +245,12 @@ exports.pengembalianBuku = async (req, res) => {
 
     // Set buku jadi tersedia lagi
     await Eksemplar.update({ status: 'Tersedia' }, { where: { id: pinjam.eksemplarId } });
-m
+    await invalidatePeminjamCache(pinjam.schoolId);
     res.json({ success: true, message: "Buku dikembalikan", denda });
   } catch (err) {
     res.status(500).json({ success: false, essage: err.message });
   }
 };
-
-// exports.scanKehadiranPerpus = async (req, res) => {
-//   const { qrCodeData, mode, schoolId } = req.body;
-//   const todayStart = moment().startOf('day').toDate();
-
-//   try {
-//     // 1. Panggil API Server User
-//     const userResponse = await axios.get(`https://be-school.kiraproject.id/siswa/validate-qr`, {
-//       params: { qrCodeData, schoolId }
-//     });
-
-//     const userData = userResponse.data;
-
-//     if (!userData.success || !userData.user) {
-//       return res.status(404).json({ success: false, message: 'Kartu tidak terdaftar di sistem pusat' });
-//     }
-
-//     const { user, role } = userData; 
-//     const idKey = role === 'student' ? 'studentId' : 'guruId';
-
-//     if (mode === 'MASUK') {
-//       // --- VALIDASI: CEK APAKAH SUDAH MASUK TAPI BELUM PULANG ---
-//       const activeSession = await KehadiranPerpus.findOne({
-//         where: { 
-//           [idKey]: user.id, 
-//           waktuPulang: null, 
-//           waktuMasuk: { [Op.gte]: todayStart },
-//           schoolId: schoolId
-//         }
-//       });
-
-//       if (activeSession) {
-//         return res.status(400).json({ 
-//           success: false, 
-//           message: `Status Anda berada di perpustakaan. Scan 'PULANG' terlebih dahulu!` 
-//         });
-//       }
-
-//       // --- LOGIKA PEMETAAN IDENTITAS ---
-//       let identitasPayload = {
-//         [idKey]: user.id,
-//         userRole: role,
-//         schoolId: schoolId,
-//         userName: user.name || user.nama,
-//         waktuMasuk: new Date(),
-//       };
-
-//       if (role === 'student') {
-//         identitasPayload.nis = user.nis;
-//       } else {
-//         identitasPayload.nip = user.nip;
-//         identitasPayload.email = user.email;
-//       }
-
-//       const data = await KehadiranPerpus.create(identitasPayload);
-      
-//       return res.json({ 
-//         success: true, 
-//         message: `Selamat Datang, ${user.name || user.nama}`, 
-//         data 
-//       });
-
-//     } else {
-//       // Logic Pulang
-//       const absen = await KehadiranPerpus.findOne({
-//         where: { [idKey]: user.id, waktuPulang: null, waktuMasuk: { [Op.gte]: todayStart } },
-//         order: [['createdAt', 'DESC']]
-//       });
-
-//       if (!absen) return res.status(400).json({ success: false, message: 'Data masuk tidak ditemukan atau Anda sudah tercatat pulang' });
-      
-//       await absen.update({ waktuPulang: new Date() });
-//       return res.json({ success: true, message: `Sampai Jumpa, ${user.name || user.nama}` });
-//     }
-//   } catch (err) {
-//     const errorMsg = err.response?.data?.message || "Gagal verifikasi kartu ke server pusat";
-//     res.status(500).json({ success: false, message: errorMsg });
-//   }
-// };
-
-// --- 2. SCAN PINJAM BUKU ---
 
 exports.scanPinjamKiosk = async (req, res) => {
   const { qrCodeData, registerNumber, schoolId } = req.body;
@@ -430,133 +371,6 @@ exports.extendLoan = async (req, res) => {
   }
 };
 
-/**
- * POST /peminjam/kehadiran
- * Scan masuk atau pulang perpustakaan
- */
-// exports.scanKehadiranPerpus = async (req, res) => {
-//   const { qrCodeData, mode, schoolId } = req.body;
-
-//   // Validasi input
-//   if (!qrCodeData || !mode || !schoolId) {
-//     return res.status(400).json({
-//       success: false,
-//       message: 'qrCodeData, mode, dan schoolId wajib diisi',
-//     });
-//   }
-
-//   const normalizedMode = (mode || '').toUpperCase();
-//   if (!['MASUK', 'PULANG'].includes(normalizedMode)) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Mode harus 'MASUK' atau 'PULANG'",
-//     });
-//   }
-
-//   const todayStart = moment().startOf('day').toDate();
-
-//   try {
-//     // 1. Validasi QR ke server pusat (be-school)
-//     const userResponse = await axios.get(`https://be-school.kiraproject.id/siswa/validate-qr`, {
-//       params: { qrCodeData, schoolId },
-//     });
-
-//     const userData = userResponse.data;
-//     if (!userData.success || !userData.user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Kartu tidak terdaftar di sistem pusat',
-//       });
-//     }
-
-//     const { user, role } = userData;
-//     const idKey = role === 'student' ? 'studentId' : 'guruId';
-
-//     if (normalizedMode === 'MASUK') {
-//       // Cek apakah sudah ada sesi aktif (belum pulang)
-//       const activeSession = await KehadiranPerpus.findOne({
-//         where: {
-//           [idKey]: user.id,
-//           waktuPulang: null,
-//           waktuMasuk: { [Op.gte]: todayStart },
-//           schoolId: Number(schoolId),
-//         },
-//       });
-
-//       if (activeSession) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Anda masih berada di perpustakaan. Scan PULANG terlebih dahulu!',
-//         });
-//       }
-
-//       // Buat record masuk
-//       const newRecord = await KehadiranPerpus.create({
-//         [idKey]: user.id,
-//         userRole: role,
-//         schoolId: Number(schoolId),
-//         userName: user.name || user.nama || 'Pengguna',
-//         waktuMasuk: new Date(),
-//         nis: role === 'student' ? user.nis : null,
-//         nip: role !== 'student' ? user.nip : null,
-//         email: role !== 'student' ? user.email : null,
-//       });
-
-//       return res.json({
-//         success: true,
-//         message: `Selamat Datang, ${user.name || user.nama || 'Pengguna'}`,
-//         visitor: {
-//           name: user.name || user.nama || 'Pengguna',
-//           role,
-//           identifier: role === 'student' ? user.nis : user.nip,
-//           kelas: role === 'student' ? user.class || user.kelas : null,
-//           photoUrl: user.photoUrl || null,
-//           mode: 'masuk',
-//           time: moment().format('HH:mm'),
-//         },
-//       });
-//     }
-
-//     // Mode PULANG
-//     const lastEntry = await KehadiranPerpus.findOne({
-//       where: {
-//         [idKey]: user.id,
-//         waktuPulang: null,
-//         waktuMasuk: { [Op.gte]: todayStart },
-//         schoolId: Number(schoolId),
-//       },
-//       order: [['waktuMasuk', 'DESC']],
-//     });
-
-//     if (!lastEntry) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Tidak ditemukan data masuk hari ini atau sudah tercatat pulang',
-//       });
-//     }
-
-//     await lastEntry.update({ waktuPulang: new Date() });
-
-//     return res.json({
-//       success: true,
-//       message: `Sampai Jumpa, ${user.name || user.nama || 'Pengguna'}`,
-//       visitor: {
-//         name: user.name || user.nama || 'Pengguna',
-//         role,
-//         identifier: role === 'student' ? user.nis : user.nip,
-//         kelas: role === 'student' ? user.class || user.kelas : null,
-//         photoUrl: user.photoUrl || null,
-//         mode: 'pulang',
-//         time: moment().format('HH:mm'),
-//       },
-//     });
-//   } catch (err) {
-//     console.error('SCAN_KEHADIRAN_ERROR:', err);
-//     const errorMsg = err.response?.data?.message || err.message || 'Gagal memproses kehadiran';
-//     return res.status(500).json({ success: false, message: errorMsg });
-//   }
-// };
-
 exports.scanKehadiranPerpus = async (req, res) => {
   const { qrCodeData, mode, schoolId } = req.body;
   const io = socket.getIO();
@@ -655,7 +469,7 @@ exports.scanKehadiranPerpus = async (req, res) => {
 
       // Broadcast ke semua TV di sekolah yang sama
       io.to(`school:${schoolIdNum}`).emit('new-visitor', visitorPayload);
-
+      await invalidatePeminjamCache(schoolIdNum);
       return res.json({
         success: true,
         message: `Selamat Datang, ${visitorPayload.name}!`,
@@ -692,7 +506,7 @@ exports.scanKehadiranPerpus = async (req, res) => {
 
       // Broadcast ke TV
       io.to(`school:${schoolIdNum}`).emit('new-visitor', visitorPayload);
-
+      await invalidatePeminjamCache(schoolIdNum);
       return res.json({
         success: true,
         message: `Sampai Jumpa, ${visitorPayload.name}! Terima kasih atas kunjungannya.`,

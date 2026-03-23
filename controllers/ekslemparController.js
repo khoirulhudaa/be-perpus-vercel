@@ -2,6 +2,24 @@ const Eksemplar = require('../models/eksemplar');
 const Biblio = require('../models/biblio');
 const { Op } = require('sequelize');
 
+const redisClient = require('../config/redis');
+
+// Helper untuk hapus cache eksemplar berdasarkan sekolah
+const invalidateEksemplarCache = async (schoolId) => {
+  if (!schoolId) return;
+  try {
+    // Format pattern sesuai middleware: cache:/api/eksemplar?schoolId=...
+    const pattern = `cache:*eksemplar*schoolId=${schoolId}*`;
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+      console.log(`🗑️ Eksemplar Cache Cleared: ${keys.length} keys for school ${schoolId}`);
+    }
+  } catch (err) {
+    console.error('❌ Redis Invalidation Error:', err.message);
+  }
+};
+
 // 1. GET ALL (Dengan Search & Pagination)
 exports.getAllEksemplar = async (req, res) => {
   try {
@@ -81,7 +99,7 @@ exports.createEksemplar = async (req, res) => {
       condition: condition || "Baik",
       isActive: true
     });
-
+    await invalidateEksemplarCache(schoolId);
     res.json({ success: true, message: "Eksemplar berhasil didaftarkan", data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -118,6 +136,7 @@ exports.updateEksemplar = async (req, res) => {
 
     if (updated) {
       const updatedData = await Eksemplar.findByPk(id);
+      await invalidateEksemplarCache(schoolId);
       res.json({ success: true, message: "Data eksemplar diperbarui", data: updatedData });
     } else {
       res.status(404).json({ success: false, message: "Eksemplar tidak ditemukan" });
@@ -132,13 +151,14 @@ exports.deleteEksemplar = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Opsi A: Hard Delete (Hapus Permanen)
-    const deleted = await Eksemplar.destroy({ where: { id } });
-
-    // Opsi B: Soft Delete (Jika tabel punya kolom isActive)
-    // const deleted = await Eksemplar.update({ isActive: false }, { where: { id } });
+    const eksemplar = await Eksemplar.findByPk(id);
+    if (!eksemplar) return res.status(404).json({ success: false, message: "Data tidak ditemukan" });
+    
+    const sId = eksemplar.schoolId;
+    await eksemplar.destroy(); // Hard delete sesuai kode Anda  
 
     if (deleted) {
+      await invalidateEksemplarCache(sId);
       res.json({ success: true, message: "Eksemplar berhasil dihapus" });
     } else {
       res.status(404).json({ success: false, message: "Eksemplar tidak ditemukan" });
