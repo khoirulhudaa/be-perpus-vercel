@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const biblioController = require('../controllers/biblioController');
+const cache = require('../middlewares/cache');
 const router = express.Router();
 
 const storage = multer.memoryStorage();
@@ -12,7 +13,7 @@ const cpUpload = upload.fields([
   { name: 'fileAtt', maxCount: 1 }
 ]);
 
-router.get('/', biblioController.getAllBiblio);
+router.get('/', cache(120), biblioController.getAllBiblio);
 router.get('/all', biblioController.getBiblioSelection);
 router.post('/', cpUpload, biblioController.createBiblio);
 router.delete('/:id', biblioController.deleteBiblio);
