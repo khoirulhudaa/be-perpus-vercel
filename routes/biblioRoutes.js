@@ -18,5 +18,6 @@ router.get('/all', biblioController.getBiblioSelection);
 router.post('/', cpUpload, biblioController.createBiblio);
 router.delete('/:id', biblioController.deleteBiblio);
 router.put('/:id', cpUpload, biblioController.updateBiblio);
+router.post('/bulk-json', biblioController.bulkCreateFromJson);
 
 module.exports = router;

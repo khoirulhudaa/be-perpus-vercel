@@ -163,6 +163,80 @@ exports.createBiblio = async (req, res) => {
   }
 };
 
+exports.bulkCreateFromJson = async (req, res) => {
+  try {
+    const { schoolId, books } = req.body;
+
+    if (!books || !Array.isArray(books)) {
+      return res.status(400).json({ success: false, message: "Data tidak valid" });
+    }
+
+    // 1. Ambil semua ISBN yang sudah ada di database (Model Biblio) untuk sekolah ini
+    // Kita hanya mengambil kolom isbnIssn agar query ringan
+    const existingInDb = await Biblio.findAll({
+      where: { 
+        schoolId, 
+        isActive: true,
+        isbnIssn: { [Op.ne]: null } // Hanya ambil yang ada ISBN-nya
+      },
+      attributes: ['isbnIssn'],
+      raw: true
+    });
+
+    // 2. Masukkan ke dalam Set untuk pencarian super cepat (O(1))
+    const dbIsbnSet = new Set(existingInDb.map(b => b.isbnIssn.trim().toLowerCase()));
+
+    // 3. Filter data dari Excel
+    const finalPayload = [];
+    const seenInExcel = new Set(); // Untuk mencegah duplikat di dalam file Excel itu sendiri
+
+    for (const book of books) {
+      // Normalisasi ISBN: hapus spasi dan jadikan lowercase untuk perbandingan akurat
+      const cleanIsbn = book.isbnIssn?.toString().trim().toLowerCase();
+
+      // LOGIKA FILTER:
+      // - Jika ISBN kosong, kita anggap boleh masuk (opsional)
+      // - Jika ISBN sudah ada di Database (dbIsbnSet), SKIP.
+      // - Jika ISBN duplikat di dalam file Excel (seenInExcel), SKIP.
+      if (cleanIsbn) {
+        if (dbIsbnSet.has(cleanIsbn) || seenInExcel.has(cleanIsbn)) {
+          continue; 
+        }
+        seenInExcel.add(cleanIsbn);
+      }
+
+      // Jika lolos filter, masukkan ke payload
+      finalPayload.push({
+        ...book,
+        schoolId: parseInt(schoolId),
+        genreId: null, // Sesuai permintaan: paksa null
+        isActive: true
+      });
+    }
+
+    // 4. Eksekusi jika ada data yang tersisa
+    if (finalPayload.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Tidak ada data baru. Semua ISBN sudah terdaftar di sistem." 
+      });
+    }
+
+    await Biblio.bulkCreate(finalPayload);
+    await invalidateBiblioCache(schoolId);
+
+    res.json({ 
+      success: true, 
+      message: `${finalPayload.length} buku berhasil diimpor.`,
+      skipped: books.length - finalPayload.length 
+    });
+
+  } catch (err) {
+    console.error("[BULK ERROR]:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 exports.deleteBiblio = async (req, res) => {
   try {
     const biblio = await Biblio.findByPk(req.params.id);
