@@ -252,24 +252,94 @@ exports.deleteBiblio = async (req, res) => {
   }
 };
 
+// exports.updateBiblio = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { schoolId } = req.body;
+
+//     const biblio = await Biblio.findByPk(id);
+//     if (!biblio) {
+//       return res.status(404).json({ success: false, message: "Katalog tidak ditemukan" });
+//     }
+
+//     // Helper Upload Cloudinary (Sama seperti di Create)
+//     const uploadToCloudinary = (buffer, resourceType = 'auto') => {
+//       return new Promise((resolve, reject) => {
+//         const stream = cloudinary.uploader.upload_stream(
+//           { 
+//             resource_type: resourceType,
+//             folder: `school_${schoolId}/library`,
+//             transformation: resourceType === 'image' ? [{ width: 800, crop: "limit", quality: "auto" }] : []
+//           }, 
+//           (error, result) => {
+//             if (error) reject(error);
+//             else resolve(result.secure_url);
+//           }
+//         );
+//         streamifier.createReadStream(buffer).pipe(stream);
+//       });
+//     };
+
+//     const uploadPromises = [];
+//     const fileKeys = [];
+
+//     // Cek jika ada upload gambar baru
+//     if (req.files && req.files.image) {
+//       uploadPromises.push(uploadToCloudinary(req.files.image[0].buffer, 'image'));
+//       fileKeys.push('image');
+//     }
+
+//     // Cek jika ada upload PDF baru
+//     if (req.files && req.files.fileAtt) {
+//       uploadPromises.push(uploadToCloudinary(req.files.fileAtt[0].buffer, 'auto'));
+//       fileKeys.push('fileAtt');
+//     }
+
+//     const uploadedUrls = await Promise.all(uploadPromises);
+    
+//     // Siapkan data update
+//     const updateData = { ...req.body };
+    
+//     // Masukkan URL baru ke updateData jika ada upload
+//     uploadedUrls.forEach((url, index) => {
+//       if (fileKeys[index] === 'image') updateData.image = url;
+//       if (fileKeys[index] === 'fileAtt') updateData.fileAtt = url;
+//     });
+
+//     // Jalankan update
+//     await biblio.update(updateData);
+
+//     // ✨ Bersihkan Cache agar perubahan langsung terlihat di Frontend
+//     await invalidateBiblioCache(schoolId || biblio.schoolId);
+
+//     res.json({ 
+//       success: true, 
+//       message: "Katalog berhasil diperbarui", 
+//       data: biblio 
+//     });
+
+//   } catch (err) {
+//     console.error("[UPDATE BIBLIO ERROR]:", err);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
 exports.updateBiblio = async (req, res) => {
   try {
     const { id } = req.params;
     const { schoolId } = req.body;
 
     const biblio = await Biblio.findByPk(id);
-    if (!biblio) {
-      return res.status(404).json({ success: false, message: "Katalog tidak ditemukan" });
-    }
+    if (!biblio) return res.status(404).json({ success: false, message: "Katalog tidak ditemukan" });
 
-    // Helper Upload Cloudinary (Sama seperti di Create)
-    const uploadToCloudinary = (buffer, resourceType = 'auto') => {
+    const uploadToCloudinary2 = (buffer, resourceType = 'auto') => {
       return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           { 
-            resource_type: resourceType,
             folder: `school_${schoolId}/library`,
-            transformation: resourceType === 'image' ? [{ width: 800, crop: "limit", quality: "auto" }] : []
+            resource_type: resourceType,
+            // Tambahkan timeout agar tidak menggantung selamanya
+            timeout: 60000 
           }, 
           (error, result) => {
             if (error) reject(error);
@@ -281,45 +351,36 @@ exports.updateBiblio = async (req, res) => {
     };
 
     const uploadPromises = [];
-    const fileKeys = [];
+    const keys = [];
 
-    // Cek jika ada upload gambar baru
-    if (req.files && req.files.image) {
-      uploadPromises.push(uploadToCloudinary(req.files.image[0].buffer, 'image'));
-      fileKeys.push('image');
+    if (req.files?.image?.[0]) {
+      uploadPromises.push(uploadToCloudinary2(req.files.image[0].buffer, 'image'));
+      keys.push('image');
     }
 
-    // Cek jika ada upload PDF baru
-    if (req.files && req.files.fileAtt) {
-      uploadPromises.push(uploadToCloudinary(req.files.fileAtt[0].buffer, 'auto'));
-      fileKeys.push('fileAtt');
+    if (req.files?.fileAtt?.[0]) {
+      uploadPromises.push(uploadToCloudinary2(req.files.fileAtt[0].buffer, 'raw')); // 'raw' atau 'auto' untuk PDF
+      keys.push('fileAtt');
     }
 
-    const uploadedUrls = await Promise.all(uploadPromises);
+    // Eksekusi paralel
+    const results = await Promise.all(uploadPromises);
     
-    // Siapkan data update
     const updateData = { ...req.body };
-    
-    // Masukkan URL baru ke updateData jika ada upload
-    uploadedUrls.forEach((url, index) => {
-      if (fileKeys[index] === 'image') updateData.image = url;
-      if (fileKeys[index] === 'fileAtt') updateData.fileAtt = url;
+    results.forEach((url, i) => {
+      updateData[keys[i]] = url;
     });
 
-    // Jalankan update
+    // Update DB
     await biblio.update(updateData);
 
-    // ✨ Bersihkan Cache agar perubahan langsung terlihat di Frontend
-    await invalidateBiblioCache(schoolId || biblio.schoolId);
+    // Jangan tunggu pembersihan cache jika tidak kritikal, 
+    // tapi karena Anda pakai Redis, ini biasanya cepat.
+    invalidateBiblioCache(schoolId || biblio.schoolId);
 
-    res.json({ 
-      success: true, 
-      message: "Katalog berhasil diperbarui", 
-      data: biblio 
-    });
+    res.json({ success: true, message: "Katalog diperbarui", data: biblio });
 
   } catch (err) {
-    console.error("[UPDATE BIBLIO ERROR]:", err);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, message: "Gagal update: " + err.message });
   }
 };
