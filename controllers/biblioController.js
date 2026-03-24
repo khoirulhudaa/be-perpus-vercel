@@ -339,7 +339,7 @@ exports.updateBiblio = async (req, res) => {
             folder: `school_${schoolId}/library`,
             resource_type: resourceType,
             // Tambahkan timeout agar tidak menggantung selamanya
-            timeout: 60000 
+            // timeout: 60000 
           }, 
           (error, result) => {
             if (error) reject(error);
