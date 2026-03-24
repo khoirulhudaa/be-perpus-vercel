@@ -59,6 +59,73 @@ exports.createMember = async (req, res) => {
   }
 };
 
+exports.bulkCreateMembers = async (req, res) => {
+  try {
+    const { schoolId, members } = req.body;
+
+    if (!members || !Array.isArray(members)) {
+      return res.status(400).json({ success: false, message: "Data tidak valid" });
+    }
+
+    // 1. Ambil semua nomorInduk yang sudah ada di sekolah ini
+    const existingInDb = await Member.findAll({
+      where: { schoolId },
+      attributes: ['nomorInduk'],
+      raw: true
+    });
+
+    // 2. Masukkan ke Set untuk lookup O(1)
+    const dbNiSet = new Set(existingInDb.map(m => m.nomorInduk.toString().trim().toLowerCase()));
+
+    const finalPayload = [];
+    const seenInExcel = new Set();
+
+    for (const m of members) {
+      const cleanNI = m.nomorInduk?.toString().trim().toLowerCase();
+
+      // Validasi: Harus ada nomor induk, belum ada di DB, dan bukan duplikat di file yang sama
+      if (cleanNI) {
+        if (dbNiSet.has(cleanNI) || seenInExcel.has(cleanNI)) {
+          continue; 
+        }
+        seenInExcel.add(cleanNI);
+      } else {
+        continue; // Lewati jika nomor induk kosong
+      }
+
+      finalPayload.push({
+        nomorInduk: m.nomorInduk.toString(),
+        nama: m.nama,
+        role: m.role || "Siswa",
+        gender: m.gender || "L",
+        kelas: m.kelas || null,
+        kontak: m.kontak || null,
+        schoolId: parseInt(schoolId),
+        isActive: true
+      });
+    }
+
+    if (finalPayload.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Tidak ada data baru. Semua Nomor Induk sudah terdaftar." 
+      });
+    }
+
+    await Member.bulkCreate(finalPayload);
+
+    res.json({ 
+      success: true, 
+      message: `${finalPayload.length} anggota berhasil diimpor.`,
+      skipped: members.length - finalPayload.length 
+    });
+
+  } catch (err) {
+    console.error("[BULK MEMBER ERROR]:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 // UPDATE MEMBER
 exports.updateMember = async (req, res) => {
   try {

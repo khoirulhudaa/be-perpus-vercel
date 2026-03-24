@@ -7,5 +7,6 @@ router.get('/', memberController.getAllMembers);
 router.post('/', memberController.createMember);
 router.put('/:id', memberController.updateMember);
 router.delete('/:id', memberController.deleteMember);
+router.post('/bulk', memberController.bulkCreateMembers);
 
 module.exports = router;
