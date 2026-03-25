@@ -13,7 +13,9 @@
   const settingRoutes = require('./settingRoutes');
   const genreRoutes = require('./genreRoutes');
   const peminjamRoutes = require('./peminjamRoutes');
+  const gutenbergRouter = require('./gutenbergRoutes');
 
+  router.use('/gutenberg', gutenbergRouter);
   router.use('/peminjam', peminjamRoutes);     
   router.use('/inventory', inventoryRoutes);
   router.use('/serial', serialRoutes);
