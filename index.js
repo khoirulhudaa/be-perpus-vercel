@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const sequelize = require('./config/database');
+const { sequelize, sequelizeGutenberg } = require('./config/database');
 const socket = require('./socket'); // file baru tadi
 const http = require('http');
 const compression = require('compression');
@@ -81,18 +81,26 @@ app.use((err, req, res, next) => {
 });
 
 // Database connection & start server
-sequelize.authenticate()
+// Database connection & start server
+Promise.all([
+  sequelize.authenticate(),          // Cek DB Utama
+  sequelizeGutenberg.authenticate()  // Cek DB Gutenberg
+])
   .then(() => {
-    console.log('MySQL connected!');
+    console.log('✅ Database Utama connected!');
+    console.log('✅ Database Gutenberg connected!');
+    
+    // Sinkronisasi hanya untuk DB Utama (karena DB Gutenberg bersifat Read-Only/External)
     return sequelize.sync({ alter: false, force: false });
   })
   .then(() => {
-    console.log('Tables synced');
-    server.listen(port, '0.0.0.0', () => {  // ← penting: server.listen, bukan app.listen
+    console.log('🚀 Tables synced');
+    server.listen(port, '0.0.0.0', () => {
       console.log(`Server running on port ${port}`);
     });
   })
   .catch(err => {
-    console.error('DB connection failed:', err);
+    console.error('❌ DB connection failed:', err.message);
+    // Berikan info detail DB mana yang gagal jika perlu
     process.exit(1);
   });
