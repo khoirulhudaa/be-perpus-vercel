@@ -55,7 +55,9 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'gutenberg_books',
-    timestamps: true,
+    timestamps: true, 
+    createdAt: 'scraped_at', // Map standar Sequelize ke kolom asli kamu
+    updatedAt: 'updated_at', // Map standar Sequelize ke kolom asli kamu
     indexes: [
       {
         name: "PRIMARY",
